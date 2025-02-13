@@ -5,37 +5,38 @@ from googleapiclient.http import BatchHttpRequest
 CALENDAR_ID = 'primary'
 
 
-# ---------------------- LIST EVENTS ---------------------- #
-def list_events(event_type=None):
-    """Lists events based on type (default, birthday, fromGmail) by manually filtering."""
-    service = get_calendar_service()
+from datetime import datetime, timedelta
+import pytz
 
-    time_min = input("Enter start date (YYYY-MM-DDTHH:MM:SSZ) or leave blank for default: ") or "2025-01-02T00:00:00Z"
-    time_max = input("Enter end date (YYYY-MM-DDTHH:MM:SSZ) or leave blank for default: ") or "2025-02-28T00:00:00Z"
-    query_params = {
-        'calendarId': CALENDAR_ID,
-        'timeMin': time_min,
-        'timeMax': time_max,
-        'maxResults': 100,  
-    }
+def list_events():
+    """Lists events occurring between a given start and end date."""
+    service = get_calendar_service()
+    time_min = input("Enter start date (YYYY-MM-DD): ")
+    time_max = input("Enter end date (YYYY-MM-DD): ")
     try:
+        time_min = datetime.strptime(time_min, "%Y-%m-%d").isoformat() + "Z" 
+        time_max = (datetime.strptime(time_max, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)).isoformat() + "Z"
+
+        query_params = {
+            'calendarId': CALENDAR_ID,
+            'timeMin': time_min,
+            'timeMax': time_max,
+            'maxResults': 100,
+            'singleEvents': True, 
+            'orderBy': 'startTime', 
+        }
         events_result = service.events().list(**query_params).execute()
         events = events_result.get('items', [])
-
         if not events:
-            print(f"No {event_type or 'all'} events found.")
+            print(f"No events found between {time_min} and {time_max}.")
             return
-
         for event in events:
-            event_type_actual = event.get('eventType', 'default')  # Default if missing
-
-            if 'recurringEventId' in event:
-                event_type_actual = 'recurring'
-            if event_type and event_type_actual != event_type:
-                continue  # Skip non-matching events
-
             start = event['start'].get('dateTime', event['start'].get('date'))
-            print(f"{start} - {event['summary']} (ID: {event['id']}, Type: {event_type_actual})")
+            summary = event.get('summary', 'No Title') 
+            event_id = event.get('id', 'Unknown ID')
+            print(f"{start} - {summary} (ID: {event_id})")
+    except ValueError:
+        print("Invalid date format. Please enter the date in 'YYYY-MM-DD' format.")
     except Exception as e:
         print(f"Error: {e}")
 
@@ -63,28 +64,34 @@ def read_event():
 
 # ---------------------- CREATE EVENTS ---------------------- #
 def create_default_event():
-    """Creates a standard calendar event."""
-    service = get_calendar_service()
-
+    """Creates a standard calendar event with user-input start and end time."""
     summary = input("Enter event title: ")
     description = input("Enter event description: ")
-    start_time = input("Enter start date and time (YYYY-MM-DDTHH:MM:SSZ): ")
-    end_time = input("Enter end date and time (YYYY-MM-DDTHH:MM:SSZ): ")
-    timezone = "UTC"
+    timezone = input("Enter your time zone (e.g., Asia/Kolkata, Europe/London): ").strip()
 
-    event = {
-        'summary': summary,
-        'description': description,
-        'start': {'dateTime': start_time, 'timeZone': timezone},
-        'end': {'dateTime': end_time, 'timeZone': timezone},
-        'eventType': 'default',
-    }
+    try:
+        start_input = input("Enter start date and time (YYYY-MM-DD HH:MM AM/PM): ")
+        end_input = input("Enter end date and time (YYYY-MM-DD HH:MM AM/PM): ")
+        user_timezone = pytz.timezone(timezone)
+        start_time = user_timezone.localize(datetime.strptime(start_input, "%Y-%m-%d %I:%M %p")).isoformat()
+        end_time = user_timezone.localize(datetime.strptime(end_input, "%Y-%m-%d %I:%M %p")).isoformat()
 
-    create_event(event)
+        event = {
+            'summary': summary,
+            'description': description,
+            'start': {'dateTime': start_time, 'timeZone': timezone},  # Store in local timezone
+            'end': {'dateTime': end_time, 'timeZone': timezone},
+            'eventType': 'default',
+        }
 
+        create_event(event)
+    except ValueError:
+        print("❌ Invalid date format. Please enter in 'YYYY-MM-DD HH:MM AM/PM' format.")
+    except pytz.UnknownTimeZoneError:
+        print("❌ Invalid time zone. Please enter a valid time zone like 'Asia/Kolkata'.")
 
 def create_birthday_event():
-    """Creates a recurring birthday event."""
+    """Creates a recurring birthday event (date remains user-input)."""
     service = get_calendar_service()
 
     summary = input("Enter birthday event title: ")
@@ -108,10 +115,11 @@ def create_event(event):
     service = get_calendar_service()
     try:
         created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-        print(f"Event created successfully!")
-        print(f"Event ID: {created_event.get('id')}")
+        print(f"✅ Event created successfully!")
+        print(f"📅 Event ID: {created_event.get('id')}")
+        print(f"📍 Event Link: {created_event.get('htmlLink')}")
     except Exception as e:
-        print(f"Error creating event: {e}")
+        print(f"❌ Error creating event: {e}")
 
 
 # ---------------------- UPDATE EVENT ---------------------- #
@@ -123,19 +131,19 @@ def update_event():
         event = service.events().get(calendarId=CALENDAR_ID, eventId=event_id).execute()
 
         updated_title = input(f"Enter new title (leave blank to keep '{event.get('summary', 'No Title')}'): ")
-        update_start_time = input(f"Enter new start date and time (YYYY-MM-DDTHH:MM:SSZ, leave blank to keep '{event.get('start', {}).get('dateTime', 'No Start Time')}'): ")
-        update_end_time = input(f"Enter new end date and time (YYYY-MM-DDTHH:MM:SSZ, leave blank to keep '{event.get('end', {}).get('dateTime', 'No End Time')}'): ")
+        update_start_time = input(f"Enter new start date and time (YYYY-MM-DD HH:MM AM/PM, leave blank to keep '{event.get('start', {}).get('dateTime', 'No Start Time')}'): ")
+        update_end_time = input(f"Enter new end date and time (YYYY-MM-DD HH:MM AM/PM, leave blank to keep '{event.get('end', {}).get('dateTime', 'No End Time')}'): ")
 
         if updated_title:
             event['summary'] = updated_title
         if update_start_time:
             event.setdefault('start', {})
             event['start']['dateTime'] = update_start_time
-            event['start']['timeZone'] = event.get('start', {}).get('timeZone', 'UTC')
+            event['start']['timeZone'] = event.get('start', {})
         if update_end_time:
             event.setdefault('end', {})
             event['end']['dateTime'] = update_end_time
-            event['end']['timeZone'] = event.get('end', {}).get('timeZone', 'UTC')
+            event['end']['timeZone'] = event.get('end', {})
 
         updated_event = service.events().update(calendarId=CALENDAR_ID, eventId=event_id, body=event).execute()
         print(f"Event Updated successfully!")
@@ -159,72 +167,106 @@ def delete_event():
 
 # ---------------------- CHECK AVAILABILITY ---------------------- #
 def check_availability():
-    """Checks if a time slot is available."""
+    """Checks if a time slot is available using Google Calendar's FreeBusy API."""
     service = get_calendar_service()
 
-    start_time = input("Enter start date and time (YYYY-MM-DDTHH:MM:SSZ): ")
-    end_time = input("Enter end date and time (YYYY-MM-DDTHH:MM:SSZ): ")
+    try:
+        start_input = input("Enter start date and time (YYYY-MM-DD HH:MM AM/PM): ")
+        end_input = input("Enter end date and time (YYYY-MM-DD HH:MM AM/PM): ")
 
-    request_body = {
-        "timeMin": start_time,
-        "timeMax": end_time,
-        "items": [{"id": "primary"}]
-    }
+        start_time = datetime.strptime(start_input, "%Y-%m-%d %I:%M %p").isoformat() + "Z"
+        end_time = datetime.strptime(end_input, "%Y-%m-%d %I:%M %p").isoformat() + "Z"
 
-    response = service.freebusy().query(body=request_body).execute()
-    busy_slots = response.get("calendars", {}).get("primary", {}).get("busy", [])
+        request_body = {
+            "timeMin": start_time,
+            "timeMax": end_time,
+            "items": [{"id": "primary"}]
+        }
 
-    print("Time slot is available." if not busy_slots else "Time slot is NOT available.")
+        response = service.freebusy().query(body=request_body).execute()
+        busy_slots = response.get("calendars", {}).get("primary", {}).get("busy", [])
+
+        if not busy_slots:
+            print("✅ Time slot is available.")
+        else:
+            print("❌ Time slot is NOT available.")
+            for slot in busy_slots:
+                print(f"⏳ Busy: {slot['start']} to {slot['end']}")
+
+    except ValueError:
+        print("❌ Invalid date format. Please enter the date in 'YYYY-MM-DD HH:MM AM/PM' format.")
+    except Exception as e:
+        print(f"❌ Error checking availability: {e}")
+
 
 # ---------------------- CREATE EVENT WITH ATTACHMENT ---------------------- #
 def create_event_with_attachment():
-    """Creates an event with a Google Drive attachment."""
+    """Creates an event with a Google Drive attachment and user-input date/time."""
     service = get_calendar_service()
-
     summary = input("Enter event title: ")
     file_url = input("Enter Google Drive file URL: ")
+    timezone = input("Enter your time zone (e.g., Europe/London, Asia/Kolkata): ").strip()
+    try:
+        start_input = input("Enter start date and time (YYYY-MM-DD HH:MM AM/PM): ")
+        end_input = input("Enter end date and time (YYYY-MM-DD HH:MM AM/PM): ")
 
-    event = {
-        'summary': summary,
-        'start': {'dateTime': '2025-02-28T10:28:00+01:00', 'timeZone': 'Europe/London'},
-        'end': {'dateTime': '2025-02-28T12:30:00+01:00', 'timeZone': 'Europe/London'},
-        'attachments': [{'fileUrl': file_url, 'title': 'Attachment'}],
-    }
+        user_timezone = pytz.timezone(timezone)
+        start_time = user_timezone.localize(datetime.strptime(start_input, "%Y-%m-%d %I:%M %p")).isoformat()
+        end_time = user_timezone.localize(datetime.strptime(end_input, "%Y-%m-%d %I:%M %p")).isoformat()
 
-    event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-    print(f"Event created: {event.get('htmlLink')}")
+        event = {
+            'summary': summary,
+            'start': {'dateTime': start_time, 'timeZone': timezone},
+            'end': {'dateTime': end_time, 'timeZone': timezone},
+            'attachments': [{'fileUrl': file_url, 'title': 'Attachment'}],
+        }
+
+        created_event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+        print(f"✅ Event created successfully!")
+        print(f"📅 Event ID: {created_event.get('id')}")
+        print(f"📍 Event Link: {created_event.get('htmlLink')}")
+
+    except ValueError:
+        print("❌ Invalid date format. Please enter the date in 'YYYY-MM-DD HH:MM AM/PM' format.")
+    except pytz.UnknownTimeZoneError:
+        print("❌ Invalid time zone. Please enter a valid time zone like 'Europe/London'.")
 
 # ---------------------- CREATE EVENT WITH GOOGLE MEET ---------------------- #
 def create_event_with_meet():
-    """Creates an event with a Google Meet link."""
+    """Creates an event with a Google Meet link and user-input date/time with timezone."""
     service = get_calendar_service()
-
     summary = input("Enter event title: ")
-    start_time = input("Enter start date and time (YYYY-MM-DDTHH:MM:SS+HH:MM): ")
-    end_time = input("Enter end date and time (YYYY-MM-DDTHH:MM:SS+HH:MM): ")
-    timezone = "UTC"
-
-    event = {
-        'summary': summary,
-        'start': {'dateTime': start_time, 'timeZone': timezone},
-        'end': {'dateTime': end_time, 'timeZone': timezone},
-        'conferenceData': {
-            'createRequest': {
-                'conferenceSolutionKey': {'type': 'hangoutsMeet'},
-                'requestId': f'meeting-{int(time.time())}' 
-            }
-        },
-    }
-
+    timezone = input("Enter your time zone (e.g., Asia/Kolkata, Europe/London): ").strip()
     try:
-        event = service.events().insert(
+        start_input = input("Enter start date and time (YYYY-MM-DD HH:MM AM/PM): ")
+        end_input = input("Enter end date and time (YYYY-MM-DD HH:MM AM/PM): ")
+        user_timezone = pytz.timezone(timezone)
+        start_time = user_timezone.localize(datetime.strptime(start_input, "%Y-%m-%d %I:%M %p")).isoformat()
+        end_time = user_timezone.localize(datetime.strptime(end_input, "%Y-%m-%d %I:%M %p")).isoformat()
+        event = {
+            'summary': summary,
+            'start': {'dateTime': start_time, 'timeZone': timezone},
+            'end': {'dateTime': end_time, 'timeZone': timezone},
+            'conferenceData': {
+                'createRequest': {
+                    'conferenceSolutionKey': {'type': 'hangoutsMeet'},
+                    'requestId': f'meeting-{int(time.time())}' 
+                }
+            },
+        }
+        created_event = service.events().insert(
             calendarId=CALENDAR_ID, body=event, conferenceDataVersion=1
         ).execute()
-        print(f"Event created: {event.get('htmlLink')}")
-        print(f"Google Meet Link: {event.get('conferenceData', {}).get('entryPoints', [{}])[0].get('uri')}")
+        print(f"✅ Event created successfully!")
+        print(f"📅 Event ID: {created_event.get('id')}")
+        print(f"📍 Event Link: {created_event.get('htmlLink')}")
+        print(f"🎥 Google Meet Link: {created_event.get('conferenceData', {}).get('entryPoints', [{}])[0].get('uri', 'No Meet link generated')}")
+    except ValueError:
+        print("❌ Invalid date format. Please enter the date in 'YYYY-MM-DD HH:MM AM/PM' format.")
+    except pytz.UnknownTimeZoneError:
+        print("❌ Invalid time zone. Please enter a valid time zone like 'Asia/Kolkata' or 'Europe/London'.")
     except Exception as e:
-        print(f"Error creating event: {e}")
-
+        print(f"❌ Error creating event: {e}")
 # ---------------------- WATCH CALENDAR ---------------------- #
 def watch_calendar():
     """Sets up push notifications for event changes."""
