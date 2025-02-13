@@ -425,6 +425,73 @@ def send_batch_requests():
 
     print("Batch request executed.")
 
+# ---------------------- CREATE FOCUS TIME EVENT ---------------------- #
+def create_focus_time_event():
+    """Creates a 'Focus Time' equivalent event (regular busy event)."""
+    service = get_calendar_service()
+
+    summary = input("Enter Focus Time event title: ")
+    start_input = input("Enter start date and time (YYYY-MM-DD HH:MM AM/PM): ")
+    end_input = input("Enter end date and time (YYYY-MM-DD HH:MM AM/PM): ")
+
+    # Convert input to ISO 8601 format
+    start_time = datetime.strptime(start_input, "%Y-%m-%d %I:%M %p").isoformat() + "Z"
+    end_time = datetime.strptime(end_input, "%Y-%m-%d %I:%M %p").isoformat() + "Z"
+
+    event = {
+        "summary": summary,
+        "start": {"dateTime": start_time},
+        "end": {"dateTime": end_time},
+        "transparency": "opaque",  
+        "visibility": "private",
+    }
+
+    created_event = service.events().insert(calendarId="primary", body=event).execute()
+    print(f"✅ 'Focus Time' event created as a regular busy event: {created_event.get('htmlLink')}")
+
+# ---------------------- CREATE OUT OF OFFICE EVENT ---------------------- #
+def create_out_of_office_event():
+    """Creates an 'Out of Office' equivalent event (regular busy event)."""
+    service = get_calendar_service()
+
+    summary = "Out of Office"
+    start_input = input("Enter start date and time (YYYY-MM-DD HH:MM AM/PM): ")
+    end_input = input("Enter end date and time (YYYY-MM-DD HH:MM AM/PM): ")
+
+    # Convert input to ISO 8601 format
+    start_time = datetime.strptime(start_input, "%Y-%m-%d %I:%M %p").isoformat() + "Z"
+    end_time = datetime.strptime(end_input, "%Y-%m-%d %I:%M %p").isoformat() + "Z"
+
+    event = {
+        "summary": summary,
+        "start": {"dateTime": start_time},
+        "end": {"dateTime": end_time},
+        "transparency": "opaque",  # Marks the time as busy
+        "visibility": "public",
+        "description": "I will be out of office during this time.",
+    }
+
+    created_event = service.events().insert(calendarId="primary", body=event).execute()
+    print(f"✅ 'Out of Office' event created as a regular busy event: {created_event.get('htmlLink')}")
+
+# ---------------------- SET WORKING LOCATION ---------------------- #
+def set_working_location():
+    """Creates a regular all-day event to represent a working location."""
+    service = get_calendar_service()
+
+    location = input("Enter working location (e.g., 'Home', 'Office', 'Remote'): ")
+    date_input = input("Enter the date (YYYY-MM-DD): ")
+
+    event = {
+        "summary": f"Working from {location}",
+        "start": {"date": date_input},
+        "end": {"date": date_input},  # End date must be the same for all-day event
+        "visibility": "private",
+        "description": f"📍 Working from {location} on {date_input}.",
+    }
+
+    created_event = service.events().insert(calendarId="primary", body=event).execute()
+    print(f"✅ Working Location event created as a normal all-day event: {created_event.get('htmlLink')}")
 
 # ---------------------- MENU SYSTEM ---------------------- #
 def main():
@@ -446,7 +513,10 @@ def main():
         "14": ("List Domain Resources, Rooms & Calendars", list_domain_resources),
         "15": ("Add Extended Properties to Event", add_extended_properties),
         "16": ("Send Batch Requests", send_batch_requests),
-        "17": ("Exit", exit)
+        "17": ("Create Focus Time Event", create_focus_time_event),
+        "18": ("Create Out of Office Event", create_out_of_office_event),
+        "19": ("Set Working Location", set_working_location),
+        "20": ("Exit", exit)
     }
 
     while True:
